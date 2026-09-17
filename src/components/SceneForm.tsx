@@ -4,7 +4,8 @@ import type { Obstacle, Scene } from '../types'
 
 interface SceneFormProps {
   scene: Scene
-  onSceneChange: (scene: Scene) => void
+  /** 每次合法提交（字段修改、障碍增删）记为一个事务。 */
+  onCommit: (scene: Scene) => void
 }
 
 interface NumberFieldProps {
@@ -101,9 +102,9 @@ function IdField({ label, value, validate, onCommit }: IdFieldProps) {
   )
 }
 
-export function SceneForm({ scene, onSceneChange }: SceneFormProps) {
+export function SceneForm({ scene, onCommit }: SceneFormProps) {
   const setPoint = (key: 'eye' | 'target', axis: 'x' | 'y') => (v: number) =>
-    onSceneChange({ ...scene, [key]: { ...scene[key], [axis]: v } })
+    onCommit({ ...scene, [key]: { ...scene[key], [axis]: v } })
 
   /** 眼点/目标点不得重合。 */
   const pointOk = (key: 'eye' | 'target', axis: 'x' | 'y') => (v: number) => {
@@ -113,13 +114,13 @@ export function SceneForm({ scene, onSceneChange }: SceneFormProps) {
   }
 
   const updateObstacle = (id: string, patch: Partial<Obstacle>) =>
-    onSceneChange({
+    onCommit({
       ...scene,
       obstacles: scene.obstacles.map((o) => (o.id === id ? { ...o, ...patch } : o)),
     })
 
   const removeObstacle = (id: string) =>
-    onSceneChange({ ...scene, obstacles: scene.obstacles.filter((o) => o.id !== id) })
+    onCommit({ ...scene, obstacles: scene.obstacles.filter((o) => o.id !== id) })
 
   const addObstacle = () => {
     let n = scene.obstacles.length + 1
@@ -128,7 +129,7 @@ export function SceneForm({ scene, onSceneChange }: SceneFormProps) {
       n += 1
       id = `obstacle-${n}`
     }
-    onSceneChange({
+    onCommit({
       ...scene,
       obstacles: [...scene.obstacles, { id, left: 40, bottom: 0, right: 45, top: 12 }],
     })

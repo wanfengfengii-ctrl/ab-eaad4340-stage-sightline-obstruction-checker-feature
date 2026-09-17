@@ -7,7 +7,14 @@ import type { Point, Scene } from '../types'
 interface CanvasProps {
   scene: Scene
   analysis: Analysis
-  onSceneChange: (scene: Scene) => void
+  /** 按下：父级锚定拖拽前场景。 */
+  onDragStart: () => void
+  /** 移动：即时联动的临时场景，不产生事务。 */
+  onDragChange: (scene: Scene) => void
+  /** 抬起：本次按下至抬起的全部位移合并为一个事务。 */
+  onDragEnd: () => void
+  /** 取消或失去捕获：恢复拖拽前场景且不留历史。 */
+  onDragCancel: () => void
 }
 
 type DragState =
@@ -22,9 +29,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 /** 场景坐标 (x, y) → SVG 坐标（y 轴翻转，原点在左下）。 */
 const sy = (y: number) => 100 - y
 
-export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
+export function Canvas({ scene, analysis, onDragStart, onDragChange, onDragEnd, onDragCancel }: CanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
+  /** 本次拖拽是否已正常抬起：抬起后必然跟随 lostpointercapture，用于与“意外失去捕获”区分。 */
+  const settledRef = useRef(false)
 
   /** 指针事件 → 场景坐标（经 CTM 逆变换，与缩放、留白无关）。 */
   const toScene = (e: ReactPointerEvent): Point => {
@@ -39,15 +48,19 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
     e.preventDefault()
     svgRef.current?.setPointerCapture(e.pointerId)
     const p = toScene(e)
+    let next: DragState
     if (kind === 'eye') {
-      setDrag({ kind, offsetX: scene.eye.x - p.x, offsetY: scene.eye.y - p.y })
+      next = { kind, offsetX: scene.eye.x - p.x, offsetY: scene.eye.y - p.y }
     } else if (kind === 'target') {
-      setDrag({ kind, offsetX: scene.target.x - p.x, offsetY: scene.target.y - p.y })
+      next = { kind, offsetX: scene.target.x - p.x, offsetY: scene.target.y - p.y }
     } else {
       const obstacle = scene.obstacles.find((o) => o.id === id)
       if (!obstacle) return
-      setDrag({ kind, id: obstacle.id, offsetX: obstacle.left - p.x, offsetY: obstacle.bottom - p.y })
+      next = { kind, id: obstacle.id, offsetX: obstacle.left - p.x, offsetY: obstacle.bottom - p.y }
     }
+    settledRef.current = false
+    onDragStart()
+    setDrag(next)
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -62,7 +75,7 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
       if (x === other.x && y === other.y) return
       const key = drag.kind
       if (scene[key].x === x && scene[key].y === y) return
-      onSceneChange({ ...scene, [key]: { x, y } })
+      onDragChange({ ...scene, [key]: { x, y } })
       return
     }
 
@@ -73,7 +86,7 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
     const left = round2(clamp(p.x + drag.offsetX, 0, 100 - width))
     const bottom = round2(clamp(p.y + drag.offsetY, 0, 100 - height))
     if (left === obstacle.left && bottom === obstacle.bottom) return
-    onSceneChange({
+    onDragChange({
       ...scene,
       obstacles: scene.obstacles.map((o) =>
         o.id === obstacle.id
@@ -83,7 +96,32 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
     })
   }
 
-  const endDrag = () => setDrag(null)
+  /** 正常抬起：位移归并为一个事务。 */
+  const handlePointerUp = () => {
+    if (!drag) return
+    settledRef.current = true
+    setDrag(null)
+    onDragEnd()
+  }
+
+  /** 取消（如浏览器手势中断）：恢复拖拽前场景，不留历史。 */
+  const handlePointerCancel = () => {
+    if (!drag || settledRef.current) return
+    settledRef.current = true
+    setDrag(null)
+    onDragCancel()
+  }
+
+  /**
+   * 失去指针捕获：正常抬起后浏览器会自动释放捕获并跟随触发本事件，需忽略；
+   * 拖拽途中意外失去捕获（未抬起）时按取消处理。
+   */
+  const handleLostCapture = () => {
+    if (!drag || settledRef.current) return
+    settledRef.current = true
+    setDrag(null)
+    onDragCancel()
+  }
 
   const blocked = analysis.status === 'blocked'
   const hit = blocked ? analysis : null
@@ -97,9 +135,9 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
       role="img"
       aria-label="剖面画布"
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={endDrag}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={handleLostCapture}
     >
       {/* 网格与坐标轴 */}
       {GRID_STEPS.map((v) => (

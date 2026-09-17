@@ -40,6 +40,32 @@ body {
   color: #64748b;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.undo-row {
+  display: flex;
+  gap: 6px;
+}
+
+.notice {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notice--warn {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .badge {
   padding: 6px 14px;
   border-radius: 999px;

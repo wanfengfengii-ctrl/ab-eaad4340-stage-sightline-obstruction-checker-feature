@@ -5,10 +5,11 @@ import type { Scene } from '../types'
 
 interface ImportPanelProps {
   scene: Scene
-  onImport: (scene: Scene) => void
+  /** 仅在一次成功导入后调用，记为一个事务；失败导入不调用，场景与历史均不变。 */
+  onCommit: (scene: Scene) => void
 }
 
-export function ImportPanel({ scene, onImport }: ImportPanelProps) {
+export function ImportPanel({ scene, onCommit }: ImportPanelProps) {
   const [text, setText] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [okMessage, setOkMessage] = useState('')
@@ -16,11 +17,11 @@ export function ImportPanel({ scene, onImport }: ImportPanelProps) {
   const handleImport = () => {
     const result = parseSceneJson(text)
     if (result.ok) {
-      onImport(result.scene)
+      onCommit(result.scene)
       setErrors([])
       setOkMessage('导入成功，画面已更新。')
     } else {
-      // 非法导入整体拒绝：不触碰当前场景，仅展示错误
+      // 非法导入整体拒绝：不触碰当前场景、遮挡判定与撤销/重做栈，仅展示错误
       setErrors(result.errors)
       setOkMessage('')
     }

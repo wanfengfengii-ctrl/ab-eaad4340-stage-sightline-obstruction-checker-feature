@@ -18,6 +18,18 @@
 - 表单与图形即时一致：拖动画布中的眼点 / 目标点 / 障碍矩形，或编辑右侧表单，另一方同步更新。
 - **非法导入整体拒绝**：JSON 解析失败或任一校验规则不满足时，不改动当前画面，仅列出全部错误。
 
+## 编辑历史与持久化
+
+- 界面右上角仅新增 **撤销 / 重做** 两个入口；撤销栈最多保留 **50** 个已提交事务，超出后丢弃最旧记录。
+- 事务边界：
+  - 表单每次**合法提交**、障碍的**增 / 删**、一次**成功导入**各记一个事务（非法表单值与失败导入不产生事务）；
+  - 画布上**按下到抬起**的全部位移合并为一个事务，拖拽过程中只做即时联动、不逐条落栈；
+  - 拖拽途中**取消（pointercancel）或意外失去指针捕获**时恢复拖拽前场景，且不留历史；
+  - 撤销后再做新编辑会**丢弃重做分支**。
+- **跨刷新恢复**：当前场景、撤销栈、重做栈作为**单一快照**写入 `localStorage`（键 `theater-sightline:history-v1`），刷新后恢复为完全相同的可操作状态（撤销 / 重做均可继续）。拖拽中的临时位移不写快照。
+- 快照只有在**通过现有场景校验**后才接管页面；快照缺失或不合法时载入默认场景并明确提示“恢复失败”。
+- 存储写入失败（配额超限、隐私模式等）时不阻断本次页面编辑与撤销 / 重做，仅提示“刷新可能丢失”。
+
 ## JSON 格式与示例
 
 顶层只允许 `eye`、`target`、`obstacles` 三个字段；点只允许 `x`、`y`；障碍只允许 `id`、`left`、`bottom`、`right`、`top`：
@@ -44,7 +56,7 @@
 ```bash
 npm ci                # 安装依赖
 npm run dev           # 开发服务器（默认 http://localhost:5173）
-npm run test          # Vitest：几何判定 + JSON 校验（31 个用例）
+npm run test          # Vitest：几何判定、JSON 校验、编辑历史与持久化快照（61 个用例）
 npm run build         # tsc 类型检查 + 生产构建（输出 dist/）
 npm run e2e           # Playwright：判定、拖拽、导入（需先执行下行）
 npx playwright install chromium
@@ -72,9 +84,12 @@ src/
   geometry.ts     # 闭线段-闭矩形求交（slab 法）、首个障碍判定
   schema.ts       # JSON 解析与全部校验规则（整体拒绝）
   presets.ts      # 默认场景（即 README 示例）
+  history.ts      # 事务化撤销/重做（归并、分支截断、50 上限）与快照校验
+  storage.ts      # 单一快照的浏览器存储读写（写入失败不阻断编辑）
+  useSceneHistory.ts  # React hook：历史 + 拖拽事务边界 + 持久化粘接
   components/     # Canvas(SVG+拖拽) / SceneForm / ResultPanel / ImportPanel
-src/*.test.ts     # Vitest 单元测试（判定与校验）
-e2e/app.spec.ts   # Playwright 端到端测试（判定、拖拽、导入）
+src/*.test.ts     # Vitest 单元测试（判定、校验、历史、存储）
+e2e/app.spec.ts   # Playwright 端到端测试（判定、拖拽、导入、撤销/重做、持久化）
 Dockerfile        # base / verify / build / web 四个阶段
 docker-compose.yml
 ```
