@@ -1,0 +1,17 @@
+services:
+  # 静态 Web：http://localhost:${WEB_PORT:-8080}
+  web:
+    build:
+      context: .
+      target: web
+    image: sightline-checker-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    restart: unless-stopped
+
+  # 一次性验收：tsc 类型检查 + Vitest + 生产构建，跑完即退出
+  verify:
+    build:
+      context: .
+      target: verify
+    image: sightline-checker-verify
