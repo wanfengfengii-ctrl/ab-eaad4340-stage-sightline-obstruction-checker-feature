@@ -7,7 +7,14 @@ import type { Point, Scene } from '../types'
 interface CanvasProps {
   scene: Scene
   analysis: Analysis
+  /** 拖拽过程中的即时场景预览（不产生事务）。 */
   onSceneChange: (scene: Scene) => void
+  /** 拖拽按下、确认开始一次拖拽时触发。 */
+  onDragStart: () => void
+  /** 指针抬起：按下至抬起的全部位移归并为一个事务。 */
+  onDragCommit: () => void
+  /** 取消或失去捕获：恢复拖拽前场景，不留历史。 */
+  onDragCancel: () => void
 }
 
 type DragState =
@@ -22,7 +29,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 /** 场景坐标 (x, y) → SVG 坐标（y 轴翻转，原点在左下）。 */
 const sy = (y: number) => 100 - y
 
-export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
+export function Canvas({ scene, analysis, onSceneChange, onDragStart, onDragCommit, onDragCancel }: CanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
 
@@ -37,17 +44,22 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
 
   const beginDrag = (kind: DragState['kind'], id?: string) => (e: ReactPointerEvent) => {
     e.preventDefault()
-    svgRef.current?.setPointerCapture(e.pointerId)
     const p = toScene(e)
+    let next: DragState | null = null
     if (kind === 'eye') {
-      setDrag({ kind, offsetX: scene.eye.x - p.x, offsetY: scene.eye.y - p.y })
+      next = { kind, offsetX: scene.eye.x - p.x, offsetY: scene.eye.y - p.y }
     } else if (kind === 'target') {
-      setDrag({ kind, offsetX: scene.target.x - p.x, offsetY: scene.target.y - p.y })
+      next = { kind, offsetX: scene.target.x - p.x, offsetY: scene.target.y - p.y }
     } else {
       const obstacle = scene.obstacles.find((o) => o.id === id)
-      if (!obstacle) return
-      setDrag({ kind, id: obstacle.id, offsetX: obstacle.left - p.x, offsetY: obstacle.bottom - p.y })
+      if (obstacle) {
+        next = { kind, id: obstacle.id, offsetX: obstacle.left - p.x, offsetY: obstacle.bottom - p.y }
+      }
     }
+    if (!next) return
+    svgRef.current?.setPointerCapture(e.pointerId)
+    setDrag(next)
+    onDragStart()
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -83,7 +95,19 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
     })
   }
 
-  const endDrag = () => setDrag(null)
+  /** 抬起：结束拖拽并提交归并事务。 */
+  const endDrag = () => {
+    if (!drag) return
+    setDrag(null)
+    onDragCommit()
+  }
+
+  /** 取消 / 失去捕获：结束拖拽并恢复拖拽前场景（抬起后捕获释放也会触发，此时 drag 已为 null，自然跳过）。 */
+  const cancelDrag = () => {
+    if (!drag) return
+    setDrag(null)
+    onDragCancel()
+  }
 
   const blocked = analysis.status === 'blocked'
   const hit = blocked ? analysis : null
@@ -98,8 +122,8 @@ export function Canvas({ scene, analysis, onSceneChange }: CanvasProps) {
       aria-label="剖面画布"
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={endDrag}
+      onPointerCancel={cancelDrag}
+      onLostPointerCapture={cancelDrag}
     >
       {/* 网格与坐标轴 */}
       {GRID_STEPS.map((v) => (
